@@ -5,18 +5,18 @@ layout: page
 
 a
 
-> Minimalist | Appleist | Unixer | Coder
+> Coder
 
 who involved in 
 
-> [github](https://github.com/waynezhang)
+> [github](https://github.com/nicelife729)
 
 mail 
 
-> echo srvpqxfbyqfvpdtkbjwt | tr yxwvtsrqpkjfdb zuonmlihgeca@.
+> nicelife8407@gmail.com
 
 or follow 
 
-> [@o_lll](https://twitter.com/#!/o_lll)
+> [@nicelife729](https://twitter.com/nicelife729)
 
 to reach me
