@@ -60,31 +60,19 @@ layout: default
   </div>
 
   <!-- BEGIN comment
-  <section class="comment">
+  END comment -->
   <div id="disqus_thread"></div>
   <script type="text/javascript">
-      var disqus_shortname = '{{ site.disqus }}';
-      var disqus_identifier = '{{ page.guid }}';
-
-      function leave_comment() {
-          var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
-          dsq.src = 'http://' + disqus_shortname + '.disqus.com/embed.js';
-          (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
-          $("#leave_comment_link").css("display", "none");
-          $("#collapse_comment_link").css("display", "");
-      };
-      function collapse_comment() {
-          // document.getElementById("disqus_thread").innerHTML = '';
-          $("#disqus_thread").slideUp(400, function() {
-              $("#disqus_thread").empty();
-              $("#leave_comment_link").css("display", "");
-              $("#collapse_comment_link").css("display", "none");
-              $("#disqus_thread").css("display", "");
-          });
-      };
-  </script>
-  <noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
-  </section>
-  END comment -->
+      /* * * CONFIGURATION VARIABLES * * */
+          var disqus_shortname = 'nicelife729';
+	      
+	          /* * * DON'T EDIT BELOW THIS LINE * * */
+		      (function() {
+		              var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+			              dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+				              (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+					          })();
+						  </script>
+						  <noscript>Please enable JavaScript to view the <a href="https://disqus.com/?ref_noscript" rel="nofollow">comments powered by Disqus.</a></noscript>
   {% endif %}
 </article>
