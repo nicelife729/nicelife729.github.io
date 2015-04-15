@@ -1,0 +1,32 @@
+*.class
+*.iml
+*.ipr
+*.iws
+*.orig
+*.rej
+.idea
+.svn
+.classpath
+.project
+.settings
+build.properties
+my_ss.jar
+ss_fat.jar
+target
+# Mobile Tools for Java (J2ME)
+.mtj.tmp/
+
+.idea/dictionaries/yoyoadm.xml
+.idea/junitgenerator-prj-settings.xml
+
+/bin
+/build
+/out
+
+# Package Files #
+#*.jar
+*.war
+*.ear
+
+# virtual machine crash logs, see http://www.java.com/en/download/help/error_herotspot.xml
+hs_err_pid*
