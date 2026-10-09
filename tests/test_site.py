@@ -41,8 +41,50 @@ class GeneratedSiteTests(unittest.TestCase):
         self.assertIn("技术爱好者，关注 AI、开发工具与有趣的技术实践。", homepage)
         self.assertIn("AI 与智能 Agent", homepage)
         self.assertIn("开发工具与自动化", homepage)
-        self.assertIn("自托管与个人基础设施", homepage)
+        self.assertIn("有趣的技术实践", homepage)
         self.assertIn("https://github.com/nicelife729", homepage)
+
+    def test_homepage_has_a_lightweight_text_only_hero(self) -> None:
+        homepage = (SITE_DIRECTORY / "index.html").read_text(encoding="utf-8")
+        stylesheet = (
+            SITE_DIRECTORY / "stylesheets" / "extra.css"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('class="home-hero"', homepage)
+        self.assertIn("radial-gradient(", stylesheet)
+        self.assertNotIn("home-avatar", homepage)
+        self.assertNotRegex(homepage, re.compile(r'<img[^>]+class="[^"]*home'))
+
+    def test_homepage_presents_the_three_current_interests(self) -> None:
+        homepage = (SITE_DIRECTORY / "index.html").read_text(encoding="utf-8")
+
+        self.assertIn("AI 与智能 Agent", homepage)
+        self.assertIn("开发工具与自动化", homepage)
+        self.assertIn("有趣的技术实践", homepage)
+        self.assertNotIn("自托管与个人基础设施", homepage)
+        self.assertRegex(homepage, re.compile(r'<div class="home-card">\s*<h3'))
+        self.assertNotIn("### :lucide", homepage)
+
+    def test_homepage_latest_post_exposes_date_and_tags(self) -> None:
+        homepage = (SITE_DIRECTORY / "index.html").read_text(encoding="utf-8")
+
+        self.assertIn('class="home-post-card"', homepage)
+        self.assertIn('<time datetime="2026-10-09">', homepage)
+        self.assertRegex(homepage, re.compile(r"home-post-tag[^>]*>\s*AI\s*<"))
+        self.assertRegex(homepage, re.compile(r"home-post-tag[^>]*>\s*随笔\s*<"))
+
+    def test_homepage_has_a_compact_mobile_layout(self) -> None:
+        stylesheet = (
+            SITE_DIRECTORY / "stylesheets" / "extra.css"
+        ).read_text(encoding="utf-8")
+
+        mobile_styles = re.compile(
+            r"@media screen and \(max-width: 40rem\).*?"
+            r"\.home-hero\s*\{.*?padding:.*?"
+            r"\.home-hero \.md-button\s*\{.*?width:\s*100%",
+            re.DOTALL,
+        )
+        self.assertRegex(stylesheet, mobile_styles)
 
     def test_reader_can_find_the_first_post_and_its_tags(self) -> None:
         blog = (SITE_DIRECTORY / "blog" / "index.html").read_text(encoding="utf-8")
