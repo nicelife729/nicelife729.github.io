@@ -1,0 +1,52 @@
+[project]
+site_url = "https://nicelife729.github.io/"
+site_name = "克里斯许的碎碎念"
+site_description = "技术爱好者，关注 AI、开发工具与有趣的技术实践。"
+site_author = "nicelife729"
+repo_url = "https://github.com/nicelife729/nicelife729.github.io"
+repo_name = "nicelife729/nicelife729.github.io"
+copyright = "Copyright &copy; 2026 克里斯许"
+extra_css = ["stylesheets/extra.css"]
+
+nav = [
+  { "首页" = "index.md" },
+  { "文章" = ["blog/index.md"] },
+  { "关于" = "about.md" },
+]
+
+[project.theme]
+language = "zh"
+custom_dir = "overrides"
+font = false
+features = [
+  "navigation.footer",
+  "navigation.instant",
+  "navigation.top",
+  "search.highlight",
+]
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+toggle.icon = "lucide/moon"
+toggle.name = "切换到深色模式"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+toggle.icon = "lucide/sun"
+toggle.name = "切换到浅色模式"
+
+[project.plugins.blog]
+
+[project.plugins.tags]
+
+[project.markdown_extensions]
+attr_list = {}
+md_in_html = {}
+pymdownx.emoji.emoji_generator = "zensical.extensions.emoji.to_svg"
+pymdownx.emoji.emoji_index = "zensical.extensions.emoji.twemoji"
+
+[[project.extra.social]]
+icon = "fontawesome/brands/github"
+link = "https://github.com/nicelife729"

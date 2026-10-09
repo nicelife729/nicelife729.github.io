@@ -1,0 +1,48 @@
+{% if page.meta.comments %}
+  <h2 class="comments-heading" id="comments">留言</h2>
+  <script
+    src="https://giscus.app/client.js"
+    data-repo="nicelife729/nicelife729.github.io"
+    data-repo-id="MDEwOlJlcG9zaXRvcnkzMjk3NDg1MQ=="
+    data-category="Announcements"
+    data-category-id="DIC_kwDOAfcoA84DHY94"
+    data-mapping="pathname"
+    data-strict="0"
+    data-reactions-enabled="1"
+    data-emit-metadata="0"
+    data-input-position="bottom"
+    data-theme="preferred_color_scheme"
+    data-lang="zh-CN"
+    data-loading="lazy"
+    crossorigin="anonymous"
+    async
+  ></script>
+  <script>
+    var giscusScript = document.querySelector("script[src*=giscus]")
+    var initialPalette = __md_get("__palette")
+    if (initialPalette && typeof initialPalette.color === "object") {
+      giscusScript.setAttribute(
+        "data-theme",
+        initialPalette.color.scheme === "slate" ? "transparent_dark" : "light"
+      )
+    }
+
+    document.addEventListener("DOMContentLoaded", function() {
+      var palette = document.querySelector("[data-md-component=palette]")
+      if (!palette) return
+
+      palette.addEventListener("change", function() {
+        var frame = document.querySelector(".giscus-frame")
+        if (!frame) return
+
+        var theme = document.body.getAttribute("data-md-color-scheme") === "slate"
+          ? "transparent_dark"
+          : "light"
+        frame.contentWindow.postMessage(
+          { giscus: { setConfig: { theme: theme } } },
+          "https://giscus.app"
+        )
+      })
+    })
+  </script>
+{% endif %}
