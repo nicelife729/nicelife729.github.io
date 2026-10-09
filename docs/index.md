@@ -8,7 +8,7 @@ hide:
 
 <span class="home-eyebrow">CHRIS XU · NOTES ON BUILDING</span>
 
-# 克里斯许的碎碎念
+# 克里斯许的<span class="home-title-accent">碎碎念</span>
 
 技术爱好者，关注 **AI、开发工具** 与有趣的技术实践。
 
@@ -25,7 +25,7 @@ hide:
 
 <div class="home-grid" markdown="1">
 
-<div class="home-card" markdown="1">
+<div class="home-card home-card--ai" markdown="1">
 
 ### :lucide-sparkles: AI 与智能 Agent
 
@@ -33,7 +33,7 @@ hide:
 
 </div>
 
-<div class="home-card" markdown="1">
+<div class="home-card home-card--tools" markdown="1">
 
 ### :lucide-terminal-square: 开发工具与自动化
 
@@ -41,7 +41,7 @@ hide:
 
 </div>
 
-<div class="home-card" markdown="1">
+<div class="home-card home-card--practice" markdown="1">
 
 ### :lucide-flask-conical: 有趣的技术实践
 

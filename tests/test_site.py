@@ -62,7 +62,10 @@ class GeneratedSiteTests(unittest.TestCase):
         self.assertIn("开发工具与自动化", homepage)
         self.assertIn("有趣的技术实践", homepage)
         self.assertNotIn("自托管与个人基础设施", homepage)
-        self.assertRegex(homepage, re.compile(r'<div class="home-card">\s*<h3'))
+        self.assertRegex(
+            homepage,
+            re.compile(r'<div class="home-card home-card--[^\"]+">\s*<h3'),
+        )
         self.assertNotIn("### :lucide", homepage)
 
     def test_homepage_latest_post_exposes_date_and_tags(self) -> None:
@@ -85,6 +88,26 @@ class GeneratedSiteTests(unittest.TestCase):
             re.DOTALL,
         )
         self.assertRegex(stylesheet, mobile_styles)
+
+    def test_homepage_cards_use_flat_workbench_panels(self) -> None:
+        homepage = (SITE_DIRECTORY / "index.html").read_text(encoding="utf-8")
+        stylesheet = (
+            SITE_DIRECTORY / "stylesheets" / "extra.css"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('class="home-title-accent"', homepage)
+        self.assertIn("home-card--ai", homepage)
+        self.assertIn("home-card--tools", homepage)
+        self.assertIn("home-card--practice", homepage)
+        self.assertIn(
+            "border-left: 3px solid var(--chris-panel-accent);", stylesheet
+        )
+        self.assertIn("background: var(--chris-surface);", stylesheet)
+        self.assertIn("box-shadow: inset 0 0 0 1px", stylesheet)
+        self.assertIn(".home-card:hover", stylesheet)
+        self.assertNotIn(".home-card::before", stylesheet)
+        self.assertNotIn("transform: translateY(-4px)", stylesheet)
+        self.assertIn("@media (prefers-reduced-motion: reduce)", stylesheet)
 
     def test_reader_can_find_the_first_post_and_its_tags(self) -> None:
         blog = (SITE_DIRECTORY / "blog" / "index.html").read_text(encoding="utf-8")
