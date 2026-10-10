@@ -7,6 +7,7 @@ repo_url = "https://github.com/nicelife729/nicelife729.github.io"
 repo_name = "nicelife729/nicelife729.github.io"
 copyright = "Copyright &copy; 2026 克里斯许"
 extra_css = ["stylesheets/extra.css"]
+extra_javascript = ["javascripts/post-meta.js"]
 
 nav = [
   { "首页" = "index.md" },

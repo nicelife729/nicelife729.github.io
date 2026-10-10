@@ -103,7 +103,7 @@ class GeneratedSiteTests(unittest.TestCase):
             "border-left: 3px solid var(--chris-panel-accent);", stylesheet
         )
         self.assertIn("background: var(--chris-surface);", stylesheet)
-        self.assertIn("box-shadow: inset 0 0 0 1px", stylesheet)
+        self.assertNotIn("box-shadow: inset 0 0 0 1px", stylesheet)
         self.assertIn(".home-card:hover", stylesheet)
         self.assertNotIn(".home-card::before", stylesheet)
         self.assertNotIn("transform: translateY(-4px)", stylesheet)
@@ -126,6 +126,99 @@ class GeneratedSiteTests(unittest.TestCase):
         post = matching_posts[0].read_text(encoding="utf-8")
         self.assertIn("AI", post)
         self.assertIn("随笔", post)
+
+    def test_blog_post_has_a_reading_workbench_header_and_body(self) -> None:
+        post = next(
+            path.read_text(encoding="utf-8")
+            for path in (SITE_DIRECTORY / "blog").rglob("index.html")
+            if "archive" not in path.parts
+            and "从一篇测试文章开始" in path.read_text(encoding="utf-8")
+            and path.parent != SITE_DIRECTORY / "blog"
+        )
+        stylesheet = (
+            SITE_DIRECTORY / "stylesheets" / "extra.css"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('class="md-content md-content--post"', post)
+        self.assertIn(".md-content--post > .md-content__inner", stylesheet)
+        self.assertIn("width: auto;", stylesheet)
+        self.assertIn("max-width: 46rem;", stylesheet)
+        self.assertIn("line-height: 1.9;", stylesheet)
+        self.assertIn(".md-content--post .md-typeset > h1", stylesheet)
+        self.assertIn("border-left: 3px solid var(--chris-panel-accent);", stylesheet)
+        self.assertIn(".md-content--post .md-typeset > h1 + p", stylesheet)
+
+    def test_blog_post_chrome_uses_workbench_panels(self) -> None:
+        post = next(
+            path.read_text(encoding="utf-8")
+            for path in (SITE_DIRECTORY / "blog").rglob("index.html")
+            if "archive" not in path.parts
+            and "从一篇测试文章开始" in path.read_text(encoding="utf-8")
+            and path.parent != SITE_DIRECTORY / "blog"
+        )
+        stylesheet = (
+            SITE_DIRECTORY / "stylesheets" / "extra.css"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn('class="md-post__meta md-nav__list"', post)
+        self.assertIn('class="md-tags"', post)
+        self.assertIn('class="comments-heading"', post)
+        self.assertIn(".md-content--post .md-post__meta", stylesheet)
+        self.assertIn(".md-content--post .md-tag", stylesheet)
+        self.assertIn(".md-content--post .comments-heading", stylesheet)
+        self.assertIn(".md-content--post .giscus", stylesheet)
+
+    def test_blog_post_rich_content_uses_the_same_visual_language(self) -> None:
+        stylesheet = (
+            SITE_DIRECTORY / "stylesheets" / "extra.css"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(".md-content--post .md-typeset > h2", stylesheet)
+        self.assertIn(".md-content--post .md-typeset > h3", stylesheet)
+        self.assertIn(".md-content--post .md-typeset > blockquote", stylesheet)
+        self.assertIn(".md-content--post .md-typeset .highlight", stylesheet)
+        self.assertIn(".md-content--post .md-typeset table:not([class])", stylesheet)
+        self.assertIn("text-decoration-thickness: 1px;", stylesheet)
+
+    def test_blog_post_has_a_compact_mobile_reading_layout(self) -> None:
+        stylesheet = (
+            SITE_DIRECTORY / "stylesheets" / "extra.css"
+        ).read_text(encoding="utf-8")
+
+        mobile_styles = re.compile(
+            r"@media screen and \(max-width: 40rem\).*?"
+            r"\.md-content--post \.md-typeset > h1\s*\{.*?padding:.*?"
+            r"\.md-content--post \.giscus\s*\{.*?padding:",
+            re.DOTALL,
+        )
+        self.assertRegex(stylesheet, mobile_styles)
+
+    def test_blog_post_metadata_moves_below_the_title_on_narrow_screens(
+        self,
+    ) -> None:
+        config = (REPOSITORY_ROOT / "zensical.toml").read_text(encoding="utf-8")
+        script_path = REPOSITORY_ROOT / "docs" / "javascripts" / "post-meta.js"
+        self.assertTrue(script_path.is_file())
+        script = script_path.read_text(encoding="utf-8")
+        stylesheet = (
+            SITE_DIRECTORY / "stylesheets" / "extra.css"
+        ).read_text(encoding="utf-8")
+        post = next(
+            path.read_text(encoding="utf-8")
+            for path in (SITE_DIRECTORY / "blog").rglob("index.html")
+            if "archive" not in path.parts
+            and "从一篇测试文章开始" in path.read_text(encoding="utf-8")
+            and path.parent != SITE_DIRECTORY / "blog"
+        )
+
+        self.assertIn('extra_javascript = ["javascripts/post-meta.js"]', config)
+        self.assertIn("javascripts/post-meta.js", post)
+        self.assertIn('matchMedia("(max-width: 44.984375em)")', script)
+        self.assertIn("heading.after(metadata)", script)
+        self.assertIn("document$.subscribe(placePostMetadata)", script)
+        self.assertIn('media.addEventListener("change", placePostMetadata)', script)
+        self.assertIn(".md-post__meta--inline", stylesheet)
+        self.assertNotIn("padding-bottom: 1.2rem;", stylesheet)
 
     def test_public_navigation_has_about_but_no_empty_projects_or_private_contact(self) -> None:
         homepage = (SITE_DIRECTORY / "index.html").read_text(encoding="utf-8")

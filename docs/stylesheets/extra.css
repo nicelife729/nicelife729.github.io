@@ -181,14 +181,12 @@
   background: var(--chris-surface);
   transition:
     background-color 160ms ease,
-    border-color 180ms ease,
-    box-shadow 180ms ease;
+    border-color 180ms ease;
 }
 
 .home-card:hover {
   border-color: var(--chris-panel-accent);
   background: var(--chris-panel-hover);
-  box-shadow: inset 0 0 0 1px var(--chris-panel-accent);
 }
 
 .md-typeset .home-card h3 {
@@ -241,14 +239,12 @@
   background: var(--chris-surface);
   transition:
     background-color 160ms ease,
-    border-color 180ms ease,
-    box-shadow 180ms ease;
+    border-color 180ms ease;
 }
 
 .home-post-card:hover {
   border-color: var(--chris-panel-accent);
   background: var(--chris-panel-hover);
-  box-shadow: inset 0 0 0 1px var(--chris-panel-accent);
 }
 
 .home-post-meta {
@@ -287,6 +283,153 @@
   height: 0.9rem;
 }
 
+.md-content--post > .md-content__inner {
+  width: auto;
+  max-width: 46rem;
+  line-height: 1.9;
+}
+
+.md-content--post .md-typeset > h1 {
+  margin: 0 0 1.6rem;
+  padding: clamp(1.15rem, 3vw, 1.55rem);
+  border: 1px solid var(--chris-line);
+  border-left: 3px solid var(--chris-panel-accent);
+  border-radius: 6px;
+  background: var(--chris-surface);
+  font-size: clamp(1.75rem, 4vw, 2.25rem);
+  line-height: 1.3;
+}
+
+.md-content--post .md-typeset > h1 + p,
+.md-content--post .md-typeset > h1 + .md-post__meta--inline + p {
+  margin: 0 0 1.5rem;
+  color: var(--chris-muted);
+  font-size: 1.05rem;
+  line-height: 1.85;
+}
+
+.md-content--post .md-typeset > p {
+  margin: 1.25rem 0;
+  line-height: 1.9;
+}
+
+.md-content--post .md-typeset > h2:not(.comments-heading) {
+  margin: 2.8rem 0 1.15rem;
+  padding: 0.4rem 0 0.5rem 0.85rem;
+  border-bottom: 1px solid var(--chris-line);
+  border-left: 3px solid var(--chris-panel-accent);
+  font-size: 1.35rem;
+  line-height: 1.45;
+}
+
+.md-content--post .md-typeset > h3 {
+  position: relative;
+  margin: 2rem 0 0.9rem;
+  padding-left: 0.85rem;
+  font-size: 1.08rem;
+}
+
+.md-content--post .md-typeset > h3::before {
+  position: absolute;
+  top: 0.2em;
+  bottom: 0.2em;
+  left: 0;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--chris-panel-accent);
+  content: "";
+}
+
+.md-content--post .md-typeset a:not(.headerlink):not(.md-tag) {
+  text-decoration: underline;
+  text-decoration-color: color-mix(
+    in srgb,
+    var(--chris-panel-accent) 55%,
+    transparent
+  );
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.22em;
+}
+
+.md-content--post .md-typeset > blockquote {
+  margin: 1.6rem 0;
+  padding: 0.9rem 1.1rem;
+  border: 1px solid var(--chris-line);
+  border-left: 3px solid var(--chris-panel-accent);
+  border-radius: 6px;
+  background: var(--chris-surface);
+  color: var(--chris-muted);
+}
+
+.md-content--post .md-typeset .highlight {
+  overflow: hidden;
+  border: 1px solid var(--chris-line);
+  border-left: 3px solid var(--chris-panel-accent);
+  border-radius: 6px;
+}
+
+.md-content--post .md-typeset table:not([class]) {
+  border: 1px solid var(--chris-line);
+  background: var(--chris-surface);
+}
+
+.md-content--post .md-typeset table:not([class]) th {
+  background: var(--chris-accent-soft);
+  color: var(--chris-ink);
+}
+
+.md-content--post .md-typeset > hr {
+  margin: 2.5rem 0;
+  border-bottom: 1px solid var(--chris-line);
+}
+
+.md-content--post .md-post__meta {
+  margin-top: 0.8rem;
+  padding: 0.55rem;
+  border: 1px solid var(--chris-line);
+  border-left: 3px solid var(--chris-panel-accent);
+  border-radius: 6px;
+  background: var(--chris-surface);
+}
+
+.md-content--post .md-post__meta .md-nav__link {
+  color: var(--chris-muted);
+}
+
+.md-content--post .md-tags {
+  gap: 0.45rem;
+  margin-top: 2.4rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--chris-line);
+}
+
+.md-content--post .md-tag {
+  border: 1px solid var(--chris-line);
+  border-radius: 999px;
+  background: var(--chris-accent-soft);
+  color: var(--chris-accent);
+  font-weight: 650;
+}
+
+.md-content--post .comments-heading {
+  margin: 3.5rem 0 1rem !important;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--chris-line);
+  border-left: 3px solid var(--chris-panel-accent);
+  border-radius: 6px;
+  background: var(--chris-surface);
+  font-size: 1.1rem;
+}
+
+.md-content--post .giscus {
+  min-height: 8rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--chris-line);
+  border-radius: 6px;
+  background: var(--chris-surface);
+}
+
 .comments-heading {
   margin-top: 3.5rem !important;
   padding-top: 2rem;
@@ -305,6 +448,64 @@
 
   .home-card {
     min-height: auto;
+  }
+}
+
+@media screen and (max-width: 44.984375em) {
+  .md-content--post .md-sidebar--post--empty {
+    display: none;
+  }
+
+  .md-content--post .md-typeset > .md-post__meta--inline {
+    display: block;
+    margin: -0.7rem 0 1.5rem !important;
+    padding: 0.55rem 0.8rem;
+    list-style: none;
+  }
+
+  .md-content--post .md-typeset > .md-post__meta--inline > .md-nav__item {
+    margin: 0;
+    list-style: none;
+  }
+
+  .md-content--post .md-typeset > .md-post__meta--inline .md-post__title {
+    display: none;
+  }
+
+  .md-content--post .md-typeset > .md-post__meta--inline
+    > .md-nav__item > .md-nav > .md-nav__list {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0.3rem 1rem;
+    margin: 0 !important;
+    padding: 0 !important;
+    list-style: none;
+  }
+
+  .md-content--post .md-typeset > .md-post__meta--inline
+    > .md-nav__item > .md-nav > .md-nav__list > .md-nav__item {
+    width: auto;
+    margin: 0;
+    flex: none;
+    list-style: none;
+  }
+
+  .md-content--post .md-typeset > .md-post__meta--inline .md-nav__link {
+    gap: 0.45rem;
+    padding: 0.25rem 0;
+    white-space: nowrap;
+  }
+
+  .md-content--post .md-typeset > .md-post__meta--inline .md-ellipsis {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: nowrap;
+  }
+
+  .md-content--post .md-typeset > .md-post__meta--inline svg {
+    width: 0.9rem;
+    height: 0.9rem;
   }
 }
 
@@ -333,6 +534,33 @@
   .home-card,
   .home-post-card {
     padding: 1.2rem;
+  }
+
+  .md-content--post > .md-content__inner {
+    max-width: 100%;
+  }
+
+  .md-content--post .md-typeset > h1 {
+    padding: 0.9rem 1rem;
+    font-size: 1.55rem;
+  }
+
+  .md-content--post .md-typeset > h1 + p,
+  .md-content--post .md-typeset > h1 + .md-post__meta--inline + p {
+    font-size: 0.98rem;
+  }
+
+  .md-content--post .md-typeset > h2:not(.comments-heading) {
+    margin-top: 2.3rem;
+    padding-left: 0.65rem;
+  }
+
+  .md-content--post .comments-heading {
+    padding: 0.7rem 0.8rem;
+  }
+
+  .md-content--post .giscus {
+    padding: 0.6rem;
   }
 }
 
