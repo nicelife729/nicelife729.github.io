@@ -57,6 +57,7 @@ hide:
 
 ## 最近写下
 
+<!-- latest-post:start -->
 <div class="home-post-card" markdown="1">
 
 <p class="home-post-meta">
@@ -72,5 +73,6 @@ hide:
 [阅读全文 :lucide-arrow-right:](blog/posts/hello.md){ .home-post-cta }
 
 </div>
+<!-- latest-post:end -->
 
 </section>

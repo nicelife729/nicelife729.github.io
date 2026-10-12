@@ -27,12 +27,12 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - name: Install Zensical
-        run: pip install zensical==0.0.69
+      - name: Install site dependencies
+        run: pip install -r requirements.txt
       - name: Test generated site
         run: python -m unittest discover -s tests -v
       - name: Build site
-        run: zensical build --clean
+        run: zensical build --clean --strict
       - uses: actions/upload-pages-artifact@v5
         with:
           path: site

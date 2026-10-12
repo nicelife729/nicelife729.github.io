@@ -267,13 +267,39 @@ class GeneratedSiteTests(unittest.TestCase):
         workflow = (
             REPOSITORY_ROOT / ".github" / "workflows" / "docs.yml"
         ).read_text(encoding="utf-8")
+        requirements = (REPOSITORY_ROOT / "requirements.txt").read_text(
+            encoding="utf-8"
+        )
 
         self.assertIn("python -m unittest", workflow)
-        self.assertIn("zensical==0.0.69", workflow)
-        self.assertIn("zensical build --clean", workflow)
+        self.assertIn("pip install -r requirements.txt", workflow)
+        self.assertIn("zensical==0.0.69", requirements)
+        self.assertIn("zensical build --clean --strict", workflow)
         self.assertIn("actions/upload-pages-artifact@v5", workflow)
         self.assertIn("actions/deploy-pages@v5", workflow)
         self.assertIn("path: site", workflow)
+
+    def test_post_workflow_keeps_drafts_private_and_installs_dependencies(
+        self,
+    ) -> None:
+        gitignore = (REPOSITORY_ROOT / ".gitignore").read_text(encoding="utf-8")
+        requirements = (REPOSITORY_ROOT / "requirements.txt").read_text(
+            encoding="utf-8"
+        )
+        workflow = (
+            REPOSITORY_ROOT / ".github" / "workflows" / "docs.yml"
+        ).read_text(encoding="utf-8")
+        homepage = (REPOSITORY_ROOT / "docs" / "index.md").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("/drafts/", gitignore)
+        self.assertIn("/docs/blog/posts/drafts/", gitignore)
+        self.assertIn("zensical==0.0.69", requirements)
+        self.assertIn("Pillow==12.3.0", requirements)
+        self.assertIn("pip install -r requirements.txt", workflow)
+        self.assertIn("<!-- latest-post:start -->", homepage)
+        self.assertIn("<!-- latest-post:end -->", homepage)
 
     def test_all_internal_links_resolve(self) -> None:
         errors = []

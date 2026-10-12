@@ -3,4 +3,5 @@ site/
 __pycache__/
 *.py[cod]
 .DS_Store
-
+/drafts/
+/docs/blog/posts/drafts/
