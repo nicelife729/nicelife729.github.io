@@ -61,16 +61,16 @@ hide:
 <div class="home-post-card" markdown="1">
 
 <p class="home-post-meta">
-  <time datetime="2026-10-09">2026 年 10 月 9 日</time>
+  <time datetime="2026-10-14">2026 年 10 月 14 日</time>
   <span class="home-post-tag">AI</span>
-  <span class="home-post-tag">随笔</span>
+  <span class="home-post-tag">Agent</span>
 </p>
 
-### [你好，这里是克里斯许的碎碎念](blog/posts/hello.md)
+### [测试文章](blog/posts/blog-from-logseq-test/index.md)
 
-从一篇测试文章开始，聊聊这里以后会记录什么。
+这是摘要
 
-[阅读全文 :lucide-arrow-right:](blog/posts/hello.md){ .home-post-cta }
+[阅读全文 :lucide-arrow-right:](blog/posts/blog-from-logseq-test/index.md){ .home-post-cta }
 
 </div>
 <!-- latest-post:end -->
