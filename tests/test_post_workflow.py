@@ -32,8 +32,23 @@ class PostWorkflowTests(unittest.TestCase):
         )
         return json.loads(completed.stdout)
 
-    def complete_review(self, root: Path, slug: str) -> dict[str, object]:
-        report = root / "drafts" / slug / "review.md"
+    def draft_path(self, root: Path, slug: str) -> Path:
+        matches = [
+            article.parent
+            for article in (root / "drafts").glob("*/article.md")
+            if f"\nslug: {slug}\n" in article.read_text(encoding="utf-8")
+        ]
+        self.assertEqual(1, len(matches), f"expected one draft for {slug}: {matches}")
+        return matches[0]
+
+    def complete_review(
+        self,
+        root: Path,
+        slug: str,
+        category: str | None = None,
+        expected_returncode: int = 0,
+    ) -> dict[str, object]:
+        report = self.draft_path(root, slug) / "review.md"
         content = report.read_text(encoding="utf-8")
         content = content.replace(
             "- 请在这里记录结构与叙事顺序建议；不直接修改正文。",
@@ -43,7 +58,22 @@ class PostWorkflowTests(unittest.TestCase):
             "- 当前表达可以进入检查阶段。",
         )
         report.write_text(content, encoding="utf-8")
-        return self.run_workflow(root, "review", slug, "--complete")
+        arguments = ["review", slug, "--complete", "--verdict", "pass"]
+        if category:
+            arguments.extend(["--category", category])
+        return self.run_workflow(
+            root, *arguments, expected_returncode=expected_returncode
+        )
+
+    def install_category_config(self, root: Path) -> None:
+        destination = root / "config" / "blog-categories.yml"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(
+            (REPOSITORY_ROOT / "config" / "blog-categories.yml").read_text(
+                encoding="utf-8"
+            ),
+            encoding="utf-8",
+        )
 
     def create_ready_draft(self, root: Path, slug: str = "ready-post") -> Path:
         homepage = root / "docs" / "index.md"
@@ -65,7 +95,7 @@ class PostWorkflowTests(unittest.TestCase):
             "--date",
             "2026-10-10",
         )
-        article = root / "drafts" / slug / "article.md"
+        article = self.draft_path(root, slug) / "article.md"
         article.write_text(
             article.read_text(encoding="utf-8")
             .replace("在这里写文章导语。", "这是发布摘要。")
@@ -95,12 +125,17 @@ class PostWorkflowTests(unittest.TestCase):
                 "2026-10-10",
             )
 
-            article = root / "drafts" / "agent-workflow" / "article.md"
+            draft = self.draft_path(root, "agent-workflow")
+            article = draft / "article.md"
             self.assertEqual("draft", result["status"])
-            self.assertEqual("drafts/agent-workflow/article.md", result["article"])
+            self.assertEqual(
+                "drafts/2026-10-10-agent-workflow/article.md",
+                result["article"],
+            )
+            self.assertEqual("2026-10-10-agent-workflow", draft.name)
             self.assertTrue(article.is_file())
             self.assertTrue(
-                (root / "drafts" / "agent-workflow" / "images" / "original").is_dir()
+                (draft / "images" / "original").is_dir()
             )
             content = article.read_text(encoding="utf-8")
             self.assertIn("draft: true", content)
@@ -125,8 +160,28 @@ class PostWorkflowTests(unittest.TestCase):
 
             self.assertEqual("让-agent-真正进入工作流", result["slug"])
             self.assertTrue(
-                (root / "drafts" / "让-agent-真正进入工作流" / "article.md").is_file()
+                (self.draft_path(root, "让-agent-真正进入工作流") / "article.md").is_file()
             )
+
+    def test_new_draft_rejects_an_invalid_creation_date(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+
+            result = self.run_workflow(
+                root,
+                "new",
+                "--title",
+                "日期错误",
+                "--slug",
+                "bad-date",
+                "--date",
+                "2026-99-99",
+                expected_returncode=2,
+            )
+
+            self.assertEqual("error", result["status"])
+            self.assertIn("YYYY-MM-DD", "\n".join(result["errors"]))
+            self.assertFalse((root / "drafts").exists())
 
     def test_new_draft_refuses_to_reuse_an_existing_draft_directory(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -172,6 +227,32 @@ class PostWorkflowTests(unittest.TestCase):
             self.assertIn("已被正式文章使用", "\n".join(result["errors"]))
             self.assertFalse((root / "drafts" / "published").exists())
 
+    def test_legacy_draft_directory_remains_resolvable_by_slug(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            legacy = root / "drafts" / "legacy-post"
+            legacy.mkdir(parents=True)
+            (legacy / "article.md").write_text(
+                "---\n"
+                "date: 2026-10-10\n"
+                "draft: true\n"
+                "comments: true\n"
+                "slug: legacy-post\n"
+                "tags:\n"
+                "  - 随笔\n"
+                "---\n\n"
+                "# 旧目录草稿\n\n"
+                "摘要。\n\n"
+                "<!-- more -->\n\n"
+                "正文。\n",
+                encoding="utf-8",
+            )
+
+            result = self.run_workflow(root, "status", "legacy-post")
+
+            self.assertEqual("draft", result["status"])
+            self.assertEqual("legacy-post", result["slug"])
+
     def test_review_creates_a_report_without_changing_the_article(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -187,14 +268,14 @@ class PostWorkflowTests(unittest.TestCase):
                 "--date",
                 "2026-10-10",
             )
-            article = root / "drafts" / "review-me" / "article.md"
+            article = self.draft_path(root, "review-me") / "article.md"
             before = hashlib.sha256(article.read_bytes()).hexdigest()
 
             started = self.run_workflow(root, "review", "review-me")
             result = self.complete_review(root, "review-me")
 
             after = hashlib.sha256(article.read_bytes()).hexdigest()
-            report = root / "drafts" / "review-me" / "review.md"
+            report = self.draft_path(root, "review-me") / "review.md"
             self.assertEqual(before, after)
             self.assertEqual("review_pending", started["status"])
             self.assertEqual("reviewed", result["status"])
@@ -227,6 +308,167 @@ class PostWorkflowTests(unittest.TestCase):
             self.assertEqual("pending", pending["review"])
             self.assertIn("尚未完成审稿", "\n".join(blocked["errors"]))
 
+    def test_rejected_content_cannot_restart_review_until_it_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.run_workflow(
+                root,
+                "new",
+                "--title",
+                "需要重写的文章",
+                "--slug",
+                "rewrite-me",
+            )
+            self.run_workflow(root, "review", "rewrite-me")
+            report = self.draft_path(root, "rewrite-me") / "review.md"
+            report.write_text(
+                report.read_text(encoding="utf-8")
+                .replace(
+                    "- 请在这里记录结构与叙事顺序建议；不直接修改正文。",
+                    "- 主线不清晰，需要重新组织结构。",
+                )
+                .replace(
+                    "- 请在这里记录措辞、段落和术语建议；不直接修改正文。",
+                    "- 需要补充具体例子。",
+                ),
+                encoding="utf-8",
+            )
+
+            rejected = self.run_workflow(
+                root,
+                "review",
+                "rewrite-me",
+                "--complete",
+                "--verdict",
+                "needs-revision",
+            )
+            status = self.run_workflow(root, "status", "rewrite-me")
+            blocked = self.run_workflow(
+                root, "review", "rewrite-me", expected_returncode=2
+            )
+            self.run_workflow(root, "check", "rewrite-me")
+            preview = self.run_workflow(
+                root, "preview", "rewrite-me", expected_returncode=2
+            )
+
+            self.assertEqual("needs_revision", rejected["status"])
+            self.assertEqual("needs_revision", status["review"])
+            self.assertIn("内容尚未修改", "\n".join(blocked["errors"]))
+            self.assertIn("退稿", "\n".join(preview["errors"]))
+
+            article = self.draft_path(root, "rewrite-me") / "article.md"
+            article.write_text(
+                article.read_text(encoding="utf-8") + "\n按反馈补充的具体例子。\n",
+                encoding="utf-8",
+            )
+            restarted = self.run_workflow(root, "review", "rewrite-me")
+            self.assertEqual("review_pending", restarted["status"])
+
+    def test_review_accepts_one_category_from_the_whitelist(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.install_category_config(root)
+            self.run_workflow(
+                root,
+                "new",
+                "--title",
+                "Agent 协作实验",
+                "--slug",
+                "agent-collaboration",
+            )
+            self.run_workflow(root, "review", "agent-collaboration")
+
+            reviewed = self.complete_review(
+                root, "agent-collaboration", category="AI 与 Agent"
+            )
+            state = json.loads(
+                (
+                    self.draft_path(root, "agent-collaboration") / "state.json"
+                ).read_text(encoding="utf-8")
+            )
+
+            self.assertEqual("reviewed", reviewed["status"])
+            self.assertEqual("AI 与 Agent", reviewed["category"])
+            self.assertEqual("AI 与 Agent", state["review_category"])
+
+    def test_review_rejects_a_category_outside_the_whitelist(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.install_category_config(root)
+            self.run_workflow(
+                root,
+                "new",
+                "--title",
+                "不能发明分类",
+                "--slug",
+                "unlisted-category",
+            )
+            self.run_workflow(root, "review", "unlisted-category")
+
+            result = self.complete_review(
+                root,
+                "unlisted-category",
+                category="临时想到的分类",
+                expected_returncode=2,
+            )
+
+            self.assertEqual("blocked", result["status"])
+            self.assertIn("不在白名单", "\n".join(result["errors"]))
+
+    def test_prepare_writes_cnblogs_front_matter_with_reviewed_category(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.install_category_config(root)
+            homepage = root / "docs" / "index.md"
+            homepage.parent.mkdir(parents=True)
+            homepage.write_text(
+                "# 首页\n\n"
+                "<!-- latest-post:start -->\n"
+                "旧内容\n"
+                "<!-- latest-post:end -->\n",
+                encoding="utf-8",
+            )
+            self.run_workflow(
+                root,
+                "new",
+                "--title",
+                "Agent 协作实验",
+                "--slug",
+                "agent-front-matter",
+                "--tag",
+                "AI",
+                "--date",
+                "2026-10-14",
+            )
+            article = self.draft_path(root, "agent-front-matter") / "article.md"
+            article.write_text(
+                article.read_text(encoding="utf-8")
+                .replace("在这里写文章导语。", "这是一次 Agent 协作流程实验。")
+                .replace("在这里开始正文。", "这是完整正文。"),
+                encoding="utf-8",
+            )
+            self.run_workflow(root, "review", "agent-front-matter")
+            self.complete_review(
+                root, "agent-front-matter", category="AI 与 Agent"
+            )
+            self.run_workflow(root, "check", "agent-front-matter")
+            self.run_workflow(root, "preview", "agent-front-matter")
+
+            self.run_workflow(root, "prepare", "agent-front-matter")
+
+            published = (
+                root
+                / "docs"
+                / "blog"
+                / "posts"
+                / "agent-front-matter"
+                / "index.md"
+            ).read_text(encoding="utf-8")
+            self.assertIn("title: Agent 协作实验", published)
+            self.assertIn("description: 这是一次 Agent 协作流程实验。", published)
+            self.assertIn("tags:\n- AI", published)
+            self.assertIn("category: AI 与 Agent", published)
+
     def test_status_invalidates_review_after_the_draft_changes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -245,7 +487,7 @@ class PostWorkflowTests(unittest.TestCase):
             current = self.run_workflow(root, "status", "changing-post")
             self.assertEqual("current", current["review"])
 
-            article = root / "drafts" / "changing-post" / "article.md"
+            article = self.draft_path(root, "changing-post") / "article.md"
             article.write_text(
                 article.read_text(encoding="utf-8") + "\n又补充了一段。\n",
                 encoding="utf-8",
@@ -266,7 +508,7 @@ class PostWorkflowTests(unittest.TestCase):
                 "--slug",
                 "broken-state",
             )
-            state = root / "drafts" / "broken-state" / "state.json"
+            state = self.draft_path(root, "broken-state") / "state.json"
             state.write_text("{not-json", encoding="utf-8")
 
             result = self.run_workflow(
@@ -289,7 +531,7 @@ class PostWorkflowTests(unittest.TestCase):
                 "--date",
                 "2026-10-10",
             )
-            article = root / "drafts" / "image-post" / "article.md"
+            article = self.draft_path(root, "image-post") / "article.md"
             article.write_text(
                 article.read_text(encoding="utf-8").replace(
                     "在这里开始正文。",
@@ -322,7 +564,7 @@ class PostWorkflowTests(unittest.TestCase):
                 "--date",
                 "2026-10-10",
             )
-            draft = root / "drafts" / "optimized-image"
+            draft = self.draft_path(root, "optimized-image")
             article = draft / "article.md"
             source = draft / "images" / "original" / "wide.jpg"
             Image.new("RGB", (2400, 1200), "#4f8cff").save(source, quality=95)
@@ -386,7 +628,7 @@ class PostWorkflowTests(unittest.TestCase):
                 "--date",
                 "2026-10-10",
             )
-            article = root / "drafts" / "publish-me" / "article.md"
+            article = self.draft_path(root, "publish-me") / "article.md"
             article.write_text(
                 article.read_text(encoding="utf-8")
                 .replace("在这里写文章导语。", "这是一段会出现在首页的摘要。")
@@ -428,7 +670,7 @@ class PostWorkflowTests(unittest.TestCase):
                 "--date",
                 "2026-10-10",
             )
-            draft = root / "drafts" / "broken-image"
+            draft = self.draft_path(root, "broken-image")
             source = draft / "images" / "original" / "broken.png"
             source.write_bytes(b"not a png")
             article = draft / "article.md"
@@ -461,7 +703,7 @@ class PostWorkflowTests(unittest.TestCase):
                 "--date",
                 "2026-10-10",
             )
-            draft = root / "drafts" / "html-image"
+            draft = self.draft_path(root, "html-image")
             source = draft / "images" / "original" / "raw.png"
             Image.new("RGBA", (32, 32), (79, 140, 255, 128)).save(source)
             article = draft / "article.md"
@@ -494,7 +736,7 @@ class PostWorkflowTests(unittest.TestCase):
                 "--slug",
                 "html-alt",
             )
-            draft = root / "drafts" / "html-alt"
+            draft = self.draft_path(root, "html-alt")
             source = draft / "images" / "original" / "raw.png"
             Image.new("RGB", (8, 8), "blue").save(source)
             article = draft / "article.md"
@@ -527,7 +769,7 @@ class PostWorkflowTests(unittest.TestCase):
             )
             outside = root / "drafts" / "outside.png"
             Image.new("RGB", (8, 8), "red").save(outside)
-            article = root / "drafts" / "escaped-image" / "article.md"
+            article = self.draft_path(root, "escaped-image") / "article.md"
             article.write_text(
                 article.read_text(encoding="utf-8").replace(
                     "在这里开始正文。", "![越界图片](../outside.png)"
@@ -559,7 +801,7 @@ class PostWorkflowTests(unittest.TestCase):
                 "--slug",
                 "checked-links",
             )
-            article = root / "drafts" / "checked-links" / "article.md"
+            article = self.draft_path(root, "checked-links") / "article.md"
             article.write_text(
                 article.read_text(encoding="utf-8").replace(
                     "在这里开始正文。",
@@ -592,7 +834,7 @@ class PostWorkflowTests(unittest.TestCase):
                 "--slug",
                 "image-collision",
             )
-            draft = root / "drafts" / "image-collision"
+            draft = self.draft_path(root, "image-collision")
             first = draft / "images" / "original" / "one" / "same.png"
             second = draft / "images" / "original" / "two" / "same.jpg"
             first.parent.mkdir(parents=True)
@@ -628,7 +870,7 @@ class PostWorkflowTests(unittest.TestCase):
                 "--slug",
                 "preserved-images",
             )
-            draft = root / "drafts" / "preserved-images"
+            draft = self.draft_path(root, "preserved-images")
             svg = draft / "images" / "original" / "diagram.svg"
             svg.write_text(
                 '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">'

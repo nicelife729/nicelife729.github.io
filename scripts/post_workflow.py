@@ -8,7 +8,9 @@ import json
 from pathlib import Path
 import re
 import shutil
+import subprocess
 import sys
+import tempfile
 import unicodedata
 from urllib.parse import unquote, urlsplit
 
@@ -52,10 +54,24 @@ def slugify_title(title: str) -> str:
 
 def draft_paths(root: Path, slug_value: str) -> tuple[str, Path, Path]:
     slug = safe_slug(slug_value)
-    draft = root / "drafts" / slug
-    article = draft / "article.md"
-    if not article.is_file():
-        raise ValueError(f"找不到草稿：drafts/{slug}/article.md")
+    matches: list[tuple[Path, Path]] = []
+    drafts = root / "drafts"
+    if drafts.is_dir():
+        for article in sorted(drafts.glob("*/article.md")):
+            try:
+                metadata, _ = parse_article(article)
+            except (OSError, ValueError):
+                continue
+            if metadata.get("slug") == slug:
+                matches.append((article.parent, article))
+    if not matches:
+        raise ValueError(f"找不到 slug 为 {slug} 的草稿")
+    if len(matches) > 1:
+        locations = ", ".join(
+            article.relative_to(root).as_posix() for _, article in matches
+        )
+        raise ValueError(f"检测到重复草稿 slug {slug}：{locations}")
+    draft, article = matches[0]
     return slug, draft, article
 
 
@@ -88,6 +104,30 @@ def write_state(draft: Path, state: dict[str, object]) -> None:
         json.dumps(state, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+
+
+def category_names(root: Path) -> set[str]:
+    path = root / "config" / "blog-categories.yml"
+    if not path.is_file():
+        raise ValueError(f"找不到博客分类白名单：{path}")
+    try:
+        config = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as error:
+        raise ValueError(f"博客分类配置无法解析：{error}") from error
+    if not isinstance(config, dict) or config.get("version") != 1:
+        raise ValueError("博客分类配置必须使用 version: 1")
+    categories = config.get("categories")
+    if not isinstance(categories, list):
+        raise ValueError("博客分类配置缺少 categories 列表")
+    names = {
+        item.get("name").strip()
+        for item in categories
+        if isinstance(item, dict) and isinstance(item.get("name"), str)
+        and item.get("name").strip()
+    }
+    if len(names) != len(categories):
+        raise ValueError("博客分类配置存在空名称或重复名称")
+    return names
 
 
 def parse_article(article: Path) -> tuple[dict[str, object], str]:
@@ -332,9 +372,29 @@ def update_review_images(draft: Path, images: list[dict[str, object]]) -> None:
 
 def new_draft(root: Path, arguments: argparse.Namespace) -> int:
     slug = safe_slug(arguments.slug) if arguments.slug else slugify_title(arguments.title)
-    draft = root / "drafts" / slug
+    try:
+        created = date.fromisoformat(arguments.date)
+    except ValueError as error:
+        raise ValueError("date 必须使用 YYYY-MM-DD 格式") from error
+    drafts = root / "drafts"
+    draft = drafts / f"{created.isoformat()}-{slug}"
     article = draft / "article.md"
-    if draft.exists():
+    existing_directories = []
+    if drafts.is_dir():
+        dated_name = re.compile(rf"^\d{{4}}-\d{{2}}-\d{{2}}-{re.escape(slug)}$")
+        existing_directories = [
+            path
+            for path in drafts.iterdir()
+            if path.is_dir() and (path.name == slug or dated_name.fullmatch(path.name))
+        ]
+    try:
+        draft_paths(root, slug)
+    except ValueError as error:
+        if not str(error).startswith("找不到 slug 为"):
+            raise
+    else:
+        existing_directories.append(draft)
+    if existing_directories:
         return emit({"status": "error", "errors": ["草稿已经存在"]}, 2)
     posts = root / "docs" / "blog" / "posts"
     if (posts / f"{slug}.md").exists() or (posts / slug).exists():
@@ -346,7 +406,7 @@ def new_draft(root: Path, arguments: argparse.Namespace) -> int:
     tag_lines = "\n".join(f"  - {tag}" for tag in tags)
     content = (
         "---\n"
-        f"date: {arguments.date}\n"
+        f"date: {created.isoformat()}\n"
         "draft: true\n"
         "comments: true\n"
         f"slug: {slug}\n"
@@ -369,6 +429,389 @@ def new_draft(root: Path, arguments: argparse.Namespace) -> int:
     )
 
 
+def pull_logseq(logseq_root: Path) -> None:
+    if not (logseq_root / ".git").exists():
+        raise ValueError(f"Logseq 路径不是 Git 仓库：{logseq_root}")
+    try:
+        completed = subprocess.run(
+            ["git", "pull", "--ff-only"],
+            cwd=logseq_root,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=60,
+        )
+    except subprocess.TimeoutExpired as error:
+        raise ValueError("Logseq git pull --ff-only 超时") from error
+    if completed.returncode:
+        detail = (completed.stderr or completed.stdout).strip()
+        raise ValueError(f"Logseq git pull --ff-only 失败：{detail}")
+
+
+def logseq_properties(content: str) -> dict[str, str]:
+    properties: dict[str, str] = {}
+    pattern = re.compile(r"^[ \t]*(?:-\s+)?([A-Za-z][\w-]*)::\s*(.*?)\s*$")
+    for line in content.splitlines():
+        match = pattern.match(line)
+        if match:
+            properties[match.group(1)] = match.group(2)
+    return properties
+
+
+def parse_logseq_created(value: str, source: str | None = None) -> date:
+    created = value.strip()
+    if created.startswith("[[") and created.endswith("]]"):
+        created = created[2:-2].strip()
+    try:
+        return date.fromisoformat(created)
+    except ValueError as error:
+        location = f" {source}" if source else ""
+        raise ValueError(
+            f"Logseq 文章{location} 的 created 必须是 [[YYYY-MM-DD]] 或 YYYY-MM-DD"
+        ) from error
+
+
+def logseq_indent_width(value: str) -> int:
+    return len(value.expandtabs(4))
+
+
+def logseq_section(content: str, heading: str) -> list[str]:
+    lines = content.splitlines()
+    start: int | None = None
+    section_width = 0
+    heading_pattern = re.compile(
+        rf"^([ \t]*)-\s+##\s+{re.escape(heading)}\s*$", re.IGNORECASE
+    )
+    for index, line in enumerate(lines):
+        match = heading_pattern.match(line)
+        if match:
+            start = index + 1
+            section_width = logseq_indent_width(match.group(1))
+            break
+    if start is None:
+        raise ValueError(f"Logseq 文章缺少 ## {heading} 区块")
+
+    section_lines: list[tuple[int, str]] = []
+    block_pattern = re.compile(r"^([ \t]*)-\s?(.*)$")
+    for line in lines[start:]:
+        match = block_pattern.match(line)
+        if match:
+            width = logseq_indent_width(match.group(1))
+            if width <= section_width:
+                break
+            section_lines.append((width, match.group(2).rstrip()))
+        elif section_lines:
+            section_lines.append((section_lines[-1][0], line.strip()))
+
+    nonempty_widths = [width for width, text in section_lines if text.strip()]
+    child_width = min(nonempty_widths, default=section_width + 4)
+    rendered: list[str] = []
+    for width, text in section_lines:
+        text = text.strip()
+        if not text:
+            continue
+        if width <= child_width:
+            rendered.append(text)
+        else:
+            depth = max(0, (width - child_width) // 4)
+            rendered.append(f"{'  ' * max(0, depth - 1)}- {text}")
+    return rendered
+
+
+def logseq_page_title(page: Path) -> str:
+    title = page.stem.replace("___", "/")
+    return title.rsplit("/", 1)[-1].strip()
+
+
+def find_logseq_article(
+    logseq_root: Path, slug: str
+) -> tuple[Path, dict[str, str], str]:
+    matches: list[tuple[Path, dict[str, str], str]] = []
+    pages = logseq_root / "pages"
+    if not pages.is_dir():
+        raise ValueError(f"Logseq 仓库缺少 pages 目录：{logseq_root}")
+    for page in sorted(pages.rglob("*.md")):
+        content = page.read_text(encoding="utf-8")
+        properties = logseq_properties(content)
+        if properties.get("class") == "article" and properties.get("slug") == slug:
+            matches.append((page, properties, content))
+    if not matches:
+        raise ValueError(f"Logseq 中找不到 class:: article 且 slug:: {slug} 的文章")
+    if len(matches) > 1:
+        locations = ", ".join(
+            item[0].relative_to(logseq_root).as_posix() for item in matches
+        )
+        raise ValueError(f"Logseq 中存在重复 slug {slug}：{locations}")
+    return matches[0]
+
+
+def queue_logseq_articles(root: Path, arguments: argparse.Namespace) -> int:
+    logseq_root = (
+        arguments.logseq_root.resolve()
+        if arguments.logseq_root
+        else (root.parent.parent / "knowledge-base" / "logseq").resolve()
+    )
+    pull_logseq(logseq_root)
+    pages = logseq_root / "pages"
+    if not pages.is_dir():
+        raise ValueError(f"Logseq 仓库缺少 pages 目录：{logseq_root}")
+
+    articles: list[dict[str, object]] = []
+    for page in sorted(pages.rglob("*.md")):
+        properties = logseq_properties(page.read_text(encoding="utf-8"))
+        if properties.get("class") != "article":
+            continue
+        if properties.get("status") != "ready-to-publish":
+            continue
+        raw_created = properties.get("created", "").strip()
+        tags = [
+            tag.strip()
+            for tag in properties.get("blog-tags", "").split(",")
+            if tag.strip()
+        ]
+        missing = [
+            name
+            for name, value in (
+                ("slug", properties.get("slug", "").strip()),
+                ("created", raw_created),
+                ("blog-tags", tags),
+            )
+            if not value
+        ]
+        if missing:
+            source = page.relative_to(logseq_root).as_posix()
+            raise ValueError(
+                f"Logseq 待发布文章 {source} 缺少必填属性：{', '.join(missing)}"
+            )
+        source = page.relative_to(logseq_root).as_posix()
+        created = parse_logseq_created(raw_created, source).isoformat()
+        articles.append(
+            {
+                "slug": properties.get("slug", "").strip(),
+                "created": created,
+                "blog_tags": tags,
+                "source": source,
+            }
+        )
+    sources_by_slug: dict[str, list[str]] = {}
+    for article in articles:
+        sources_by_slug.setdefault(str(article["slug"]), []).append(
+            str(article["source"])
+        )
+    duplicates = {
+        slug: sources
+        for slug, sources in sources_by_slug.items()
+        if len(sources) > 1
+    }
+    if duplicates:
+        details = "; ".join(
+            f"重复 slug {slug}：{', '.join(sources)}"
+            for slug, sources in sorted(duplicates.items())
+        )
+        raise ValueError(f"Logseq 待发布队列存在{details}")
+    articles.sort(key=lambda article: (str(article["created"]), str(article["slug"])))
+    return emit({"status": "queue", "articles": articles})
+
+
+def copy_logseq_images(
+    logseq_root: Path,
+    page: Path,
+    markdown: str,
+    destination: Path,
+) -> tuple[str, list[str]]:
+    replacements: dict[str, str] = {}
+    copied: list[str] = []
+    output_sources: dict[str, Path] = {}
+    assets_root = (logseq_root / "assets").resolve()
+    for raw_target, _, _ in image_references(markdown):
+        parsed = urlsplit(unquote(raw_target))
+        if parsed.scheme in {"http", "https"} or parsed.netloc:
+            continue
+        if parsed.scheme or raw_target.startswith("/"):
+            raise ValueError(f"Logseq 图片必须使用仓库内相对路径：{raw_target}")
+        source = (page.parent / parsed.path).resolve()
+        try:
+            source.relative_to(assets_root)
+        except ValueError as error:
+            raise ValueError(f"Logseq 图片越过 assets 目录：{raw_target}") from error
+        if not source.is_file():
+            raise ValueError(f"找不到 Logseq 图片：{raw_target}")
+        if source.suffix.lower() not in SUPPORTED_IMAGE_SUFFIXES:
+            raise ValueError(f"不支持的 Logseq 图片格式：{raw_target}")
+        previous = output_sources.get(source.name)
+        if previous is not None and previous != source:
+            raise ValueError(f"Logseq 图片文件名冲突：{source.name}")
+        if previous == source:
+            replacements[raw_target] = f"images/original/{source.name}"
+            continue
+        output_sources[source.name] = source
+        destination.mkdir(parents=True, exist_ok=True)
+        target = destination / source.name
+        shutil.copy2(source, target)
+        replacements[raw_target] = f"images/original/{source.name}"
+        copied.append(target.name)
+
+    def rewrite(match: re.Match[str]) -> str:
+        raw_target = match.group(2) or match.group(3)
+        replacement = replacements.get(raw_target)
+        if not replacement:
+            return match.group(0)
+        return match.group(0).replace(raw_target, replacement, 1)
+
+    return MARKDOWN_IMAGE.sub(rewrite, markdown), copied
+
+
+def import_logseq_draft(root: Path, arguments: argparse.Namespace) -> int:
+    slug = safe_slug(arguments.slug)
+    logseq_root = (
+        arguments.logseq_root.resolve()
+        if arguments.logseq_root
+        else (root.parent.parent / "knowledge-base" / "logseq").resolve()
+    )
+    pull_logseq(logseq_root)
+    page, properties, source_content = find_logseq_article(logseq_root, slug)
+    tags = [tag.strip() for tag in (arguments.tag or []) if tag.strip()]
+    if not tags:
+        tags = [
+            tag.strip()
+            for tag in properties.get("blog-tags", "").split(",")
+            if tag.strip()
+        ]
+    if not tags:
+        raise ValueError("Logseq blog-tags 必须至少包含一个公开标签")
+
+    created = parse_logseq_created(properties.get("created", ""))
+
+    title = logseq_page_title(page)
+    if not title:
+        raise ValueError("无法从 Logseq 页面名取得文章标题")
+    summary = logseq_section(source_content, "摘要")
+    body = logseq_section(source_content, "正文")
+    references = logseq_section(source_content, "ref.")
+    if not summary:
+        raise ValueError("Logseq 文章摘要不能为空")
+    if not body:
+        raise ValueError("Logseq 文章正文不能为空")
+
+    draft = root / "drafts" / f"{created.isoformat()}-{slug}"
+    source_path = page.relative_to(logseq_root).as_posix()
+    existing: tuple[str, Path, Path] | None = None
+    try:
+        existing = draft_paths(root, slug)
+    except ValueError as error:
+        if not str(error).startswith("找不到 slug 为"):
+            raise
+    if draft.exists() and existing is None:
+        raise ValueError(f"目标草稿目录已存在但不属于该 slug：{draft.relative_to(root)}")
+    if existing is not None:
+        _, existing_draft, existing_article = existing
+        if existing_draft != draft:
+            raise ValueError(
+                "Logseq created 与现有草稿目录不一致；拒绝自动移动或覆盖草稿"
+            )
+        state = read_state(existing_draft)
+        imported_fingerprint = state.get("imported_fingerprint")
+        if state.get("source") != source_path or not imported_fingerprint:
+            raise ValueError("现有草稿没有匹配的 Logseq 导入来源，拒绝覆盖")
+        if content_fingerprint(existing_draft, existing_article) != imported_fingerprint:
+            raise ValueError("本地生成草稿或原图已被修改；请在 Logseq 修改后再导入")
+    posts = root / "docs" / "blog" / "posts"
+    if existing is None and (
+        (posts / f"{slug}.md").exists() or (posts / slug).exists()
+    ):
+        return emit(
+            {"status": "error", "slug": slug, "errors": ["该 slug 已被正式文章使用"]},
+            2,
+        )
+
+    tag_lines = "\n".join(f"  - {tag}" for tag in tags)
+    sections = [
+        f"# {title}",
+        "\n\n".join(summary),
+        "<!-- more -->",
+        "\n\n".join(body),
+    ]
+    if references:
+        sections.extend(["## 参考资料", "\n\n".join(references)])
+    article_body = "\n\n".join(sections) + "\n"
+    drafts_root = root / "drafts"
+    drafts_root.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".logseq-import-", dir=drafts_root) as staging_name:
+        staging = Path(staging_name)
+        originals = staging / "images" / "original"
+        originals.mkdir(parents=True)
+        article_body, copied = copy_logseq_images(
+            logseq_root,
+            page,
+            article_body,
+            originals,
+        )
+        content = (
+            "---\n"
+            f"date: {created.isoformat()}\n"
+            "draft: true\n"
+            "comments: true\n"
+            f"slug: {slug}\n"
+            "tags:\n"
+            f"{tag_lines}\n"
+            "---\n\n"
+            f"{article_body}"
+        )
+        staged_article = staging / "article.md"
+        staged_article.write_text(content, encoding="utf-8")
+        imported_fingerprint = content_fingerprint(staging, staged_article)
+        new_state = {
+            "slug": slug,
+            "source": source_path,
+            "source_status": properties.get("status"),
+            "imported_at": datetime.now(timezone.utc).isoformat(),
+            "imported_fingerprint": imported_fingerprint,
+        }
+        if existing is None:
+            write_state(staging, new_state)
+            staging.rename(draft)
+        else:
+            _, existing_draft, existing_article = existing
+            if (
+                content_fingerprint(existing_draft, existing_article)
+                == imported_fingerprint
+            ):
+                state = read_state(existing_draft)
+                state.update(
+                    {
+                        "source_status": properties.get("status"),
+                        "imported_at": new_state["imported_at"],
+                    }
+                )
+                write_state(existing_draft, state)
+                return emit(
+                    {
+                        "status": "unchanged",
+                        "slug": slug,
+                        "article": existing_article.relative_to(root).as_posix(),
+                        "source": source_path,
+                        "images": copied,
+                    }
+                )
+            existing_article.write_bytes(staged_article.read_bytes())
+            existing_originals = existing_draft / "images" / "original"
+            if existing_originals.exists():
+                shutil.rmtree(existing_originals)
+            shutil.copytree(originals, existing_originals)
+            write_state(existing_draft, new_state)
+
+    article = draft / "article.md"
+    return emit(
+        {
+            "status": "imported",
+            "slug": slug,
+            "article": article.relative_to(root).as_posix(),
+            "source": source_path,
+            "images": copied,
+        }
+    )
+
+
 def review_draft(root: Path, arguments: argparse.Namespace) -> int:
     slug, draft, article = draft_paths(root, arguments.slug)
     fingerprint = content_fingerprint(draft, article)
@@ -376,6 +819,33 @@ def review_draft(root: Path, arguments: argparse.Namespace) -> int:
     report_path = draft / "review.md"
 
     if arguments.complete:
+        if not arguments.verdict:
+            return emit(
+                {
+                    "status": "blocked",
+                    "slug": slug,
+                    "errors": ["完成审稿时必须使用 --verdict 选择 pass 或 needs-revision"],
+                },
+                2,
+            )
+        if arguments.category and arguments.verdict != "pass":
+            return emit(
+                {
+                    "status": "blocked",
+                    "slug": slug,
+                    "errors": ["只有 pass 审稿结果可以指定公开分类"],
+                },
+                2,
+            )
+        if arguments.category and arguments.category not in category_names(root):
+            return emit(
+                {
+                    "status": "blocked",
+                    "slug": slug,
+                    "errors": [f"公开分类不在白名单中：{arguments.category}"],
+                },
+                2,
+            )
         if state.get("review_started_fingerprint") != fingerprint:
             return emit(
                 {
@@ -404,21 +874,68 @@ def review_draft(root: Path, arguments: argparse.Namespace) -> int:
                 },
                 2,
             )
+        report_hash = hashlib.sha256(report.encode("utf-8")).hexdigest()
+        reviewed_at = datetime.now(timezone.utc).isoformat()
+        if arguments.verdict == "needs-revision":
+            state.pop("review_fingerprint", None)
+            state.pop("review_category", None)
+            state.update(
+                {
+                    "review_verdict": "needs-revision",
+                    "review_report_hash": report_hash,
+                    "reviewed_at": reviewed_at,
+                    "revision_feedback": {
+                        "fingerprint": fingerprint,
+                        "report_hash": report_hash,
+                        "report": report_path.relative_to(root).as_posix(),
+                    },
+                }
+            )
+            write_state(draft, state)
+            return emit(
+                {
+                    "status": "needs_revision",
+                    "slug": slug,
+                    "fingerprint": fingerprint,
+                    "report": report_path.relative_to(root).as_posix(),
+                }
+            )
+        state.pop("revision_feedback", None)
+        if arguments.category:
+            state["review_category"] = arguments.category
+        else:
+            state.pop("review_category", None)
         state.update(
             {
+                "review_verdict": "pass",
                 "review_fingerprint": fingerprint,
-                "review_report_hash": hashlib.sha256(report.encode("utf-8")).hexdigest(),
-                "reviewed_at": datetime.now(timezone.utc).isoformat(),
+                "review_report_hash": report_hash,
+                "reviewed_at": reviewed_at,
             }
         )
         write_state(draft, state)
-        return emit(
-            {
+        result: dict[str, object] = {
                 "status": "reviewed",
                 "slug": slug,
                 "fingerprint": fingerprint,
                 "report": report_path.relative_to(root).as_posix(),
             }
+        if arguments.category:
+            result["category"] = arguments.category
+        return emit(result)
+
+    revision_feedback = state.get("revision_feedback")
+    if (
+        isinstance(revision_feedback, dict)
+        and revision_feedback.get("fingerprint") == fingerprint
+    ):
+        return emit(
+            {
+                "status": "blocked",
+                "slug": slug,
+                "errors": ["上次退稿后内容尚未修改；请先在内容源中重写后再审"],
+            },
+            2,
         )
 
     content = article.read_text(encoding="utf-8")
@@ -471,6 +988,13 @@ def draft_status(root: Path, arguments: argparse.Namespace) -> int:
         return "current" if recorded == fingerprint else "stale"
 
     review = freshness("review_fingerprint")
+    revision_feedback = state.get("revision_feedback")
+    if (
+        review == "missing"
+        and isinstance(revision_feedback, dict)
+        and revision_feedback.get("fingerprint") == fingerprint
+    ):
+        review = "needs_revision"
     if review == "missing" and state.get("review_started_fingerprint"):
         review = (
             "pending"
@@ -481,6 +1005,8 @@ def draft_status(root: Path, arguments: argparse.Namespace) -> int:
     preview = freshness("preview_fingerprint")
     prepared = freshness("prepared_fingerprint")
     phase = "draft"
+    if review == "needs_revision":
+        phase = "needs_revision"
     if review == "current":
         phase = "reviewed"
     if check == "current":
@@ -543,7 +1069,49 @@ def clear_generated_directory(destination: Path) -> None:
         shutil.rmtree(destination)
 
 
-def render_article_copy(draft: Path, article: Path, destination: Path) -> list[dict[str, object]]:
+def publication_front_matter(content: str, category: str | None) -> str:
+    match = FRONT_MATTER.match(content)
+    if not match:
+        raise ValueError("文章缺少 YAML front matter")
+    try:
+        metadata = yaml.safe_load(match.group(1)) or {}
+    except yaml.YAMLError as error:
+        raise ValueError(f"front matter 无法解析：{error}") from error
+    if not isinstance(metadata, dict):
+        raise ValueError("front matter 必须是键值结构")
+    body = content[match.end() :]
+    heading = re.search(r"^#\s+(.+)$", body, flags=re.MULTILINE)
+    if not heading:
+        raise ValueError("无法生成公开元数据：缺少一级标题")
+    before_more = body.split("<!-- more -->", 1)[0]
+    without_title = re.sub(
+        r"^#\s+.+$", "", before_more, count=1, flags=re.MULTILINE
+    )
+    paragraphs = [
+        part.strip()
+        for part in re.split(r"\n\s*\n", without_title)
+        if part.strip()
+    ]
+    if not paragraphs:
+        raise ValueError("无法生成公开元数据：摘要为空")
+    metadata["title"] = heading.group(1).strip()
+    metadata["description"] = paragraphs[0]
+    if category:
+        metadata["category"] = category
+    else:
+        metadata.pop("category", None)
+    front_matter = yaml.safe_dump(
+        metadata, allow_unicode=True, sort_keys=False
+    ).rstrip()
+    return f"---\n{front_matter}\n---\n\n{body}"
+
+
+def render_article_copy(
+    draft: Path,
+    article: Path,
+    destination: Path,
+    category: str | None = None,
+) -> list[dict[str, object]]:
     clear_generated_directory(destination)
     (destination / "images").mkdir(parents=True)
 
@@ -634,6 +1202,7 @@ def render_article_copy(draft: Path, article: Path, destination: Path) -> list[d
 
     rendered = MARKDOWN_IMAGE.sub(rewrite, content)
     rendered = HTML_IMAGE.sub(rewrite_html, rendered)
+    rendered = publication_front_matter(rendered, category)
     (destination / "index.md").write_text(rendered, encoding="utf-8")
     return optimized
 
@@ -645,7 +1214,13 @@ def preview_draft(root: Path, arguments: argparse.Namespace) -> int:
     state = read_state(draft)
     errors: list[str] = []
     if state.get("review_fingerprint") != fingerprint:
-        if state.get("review_started_fingerprint") == fingerprint:
+        revision_feedback = state.get("revision_feedback")
+        if (
+            isinstance(revision_feedback, dict)
+            and revision_feedback.get("fingerprint") == fingerprint
+        ):
+            errors.append("当前内容已被退稿；请先修改内容源并重新审稿")
+        elif state.get("review_started_fingerprint") == fingerprint:
             errors.append("当前内容尚未完成审稿报告")
         else:
             errors.append("当前内容尚未审稿，或审稿结果已经失效")
@@ -655,7 +1230,13 @@ def preview_draft(root: Path, arguments: argparse.Namespace) -> int:
         return emit({"status": "blocked", "slug": slug, "errors": errors}, 2)
 
     destination = root / "docs" / "blog" / "posts" / "drafts" / slug
-    optimized = render_article_copy(draft, article, destination)
+    category = state.get("review_category")
+    optimized = render_article_copy(
+        draft,
+        article,
+        destination,
+        category if isinstance(category, str) else None,
+    )
     update_review_images(draft, optimized)
     state.update(
         {
@@ -801,7 +1382,13 @@ def prepare_draft(root: Path, arguments: argparse.Namespace) -> int:
             2,
         )
 
-    optimized = render_article_copy(draft, article, destination)
+    category = state.get("review_category")
+    optimized = render_article_copy(
+        draft,
+        article,
+        destination,
+        category if isinstance(category, str) else None,
+    )
     published_path = destination / "index.md"
     public_content = re.sub(
         r"(?m)^draft:\s*true\s*\n", "", published_path.read_text(encoding="utf-8")
@@ -849,9 +1436,25 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("--date", default=date.today().isoformat())
     create.set_defaults(handler=new_draft)
 
+    import_logseq = commands.add_parser(
+        "import-logseq", help="从只读 Logseq 仓库导入本地草稿"
+    )
+    import_logseq.add_argument("slug")
+    import_logseq.add_argument("--logseq-root", type=Path)
+    import_logseq.add_argument("--tag", action="append")
+    import_logseq.set_defaults(handler=import_logseq_draft)
+
+    queue_logseq = commands.add_parser(
+        "queue-logseq", help="扫描 Logseq 中待发布的文章"
+    )
+    queue_logseq.add_argument("--logseq-root", type=Path)
+    queue_logseq.set_defaults(handler=queue_logseq_articles)
+
     review = commands.add_parser("review", help="生成不修改正文的审稿报告")
     review.add_argument("slug")
     review.add_argument("--complete", action="store_true", help="确认审稿报告已经填写完成")
+    review.add_argument("--verdict", choices=("pass", "needs-revision"))
+    review.add_argument("--category")
     review.set_defaults(handler=review_draft)
 
     status = commands.add_parser("status", help="查询草稿当前阶段")

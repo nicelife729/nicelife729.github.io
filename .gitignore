@@ -4,4 +4,9 @@ __pycache__/
 *.py[cod]
 .DS_Store
 /drafts/
+!/drafts/
+/drafts/*
+!/drafts/_template/
+!/drafts/_template/article.md
+!/drafts/ARTICLE-PUBLISHING-E2E-MANUAL.md
 /docs/blog/posts/drafts/
