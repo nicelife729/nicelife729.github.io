@@ -70,11 +70,33 @@ class GeneratedSiteTests(unittest.TestCase):
 
     def test_homepage_latest_post_exposes_date_and_tags(self) -> None:
         homepage = (SITE_DIRECTORY / "index.html").read_text(encoding="utf-8")
+        homepage_source = (REPOSITORY_ROOT / "docs" / "index.md").read_text(
+            encoding="utf-8"
+        )
+        latest_post_match = re.search(
+            r"<!-- latest-post:start -->(.*?)<!-- latest-post:end -->",
+            homepage_source,
+            flags=re.DOTALL,
+        )
 
+        self.assertIsNotNone(latest_post_match)
+        latest_post_source = latest_post_match.group(1)
+        published_dates = re.findall(
+            r'<time datetime="(\d{4}-\d{2}-\d{2})">', latest_post_source
+        )
+        tags = re.findall(
+            r'<span class="home-post-tag">([^<]+)</span>', latest_post_source
+        )
+
+        self.assertEqual(1, len(published_dates))
+        self.assertTrue(tags)
         self.assertIn('class="home-post-card"', homepage)
-        self.assertIn('<time datetime="2026-10-09">', homepage)
-        self.assertRegex(homepage, re.compile(r"home-post-tag[^>]*>\s*AI\s*<"))
-        self.assertRegex(homepage, re.compile(r"home-post-tag[^>]*>\s*随笔\s*<"))
+        self.assertIn(f'<time datetime="{published_dates[0]}">', homepage)
+        for tag in tags:
+            self.assertRegex(
+                homepage,
+                re.compile(rf"home-post-tag[^>]*>\s*{re.escape(tag)}\s*<"),
+            )
 
     def test_homepage_has_a_compact_mobile_layout(self) -> None:
         stylesheet = (
