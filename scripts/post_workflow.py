@@ -106,6 +106,20 @@ def write_state(draft: Path, state: dict[str, object]) -> None:
     )
 
 
+def current_revision_verdict(
+    state: dict[str, object], fingerprint: str
+) -> str | None:
+    feedback = state.get("revision_feedback")
+    verdict = state.get("review_verdict")
+    if (
+        isinstance(feedback, dict)
+        and feedback.get("fingerprint") == fingerprint
+        and verdict == "needs-revision"
+    ):
+        return verdict
+    return None
+
+
 def category_names(root: Path) -> set[str]:
     path = root / "config" / "blog-categories.yml"
     if not path.is_file():
@@ -900,6 +914,7 @@ def review_draft(root: Path, arguments: argparse.Namespace) -> int:
                     "report": report_path.relative_to(root).as_posix(),
                 }
             )
+        overrode_verdict = current_revision_verdict(state, fingerprint)
         state.pop("revision_feedback", None)
         if arguments.category:
             state["review_category"] = arguments.category
@@ -915,20 +930,18 @@ def review_draft(root: Path, arguments: argparse.Namespace) -> int:
         )
         write_state(draft, state)
         result: dict[str, object] = {
-                "status": "reviewed",
-                "slug": slug,
-                "fingerprint": fingerprint,
-                "report": report_path.relative_to(root).as_posix(),
-            }
+            "status": "reviewed",
+            "slug": slug,
+            "fingerprint": fingerprint,
+            "report": report_path.relative_to(root).as_posix(),
+        }
+        if overrode_verdict:
+            result["overrode_verdict"] = overrode_verdict
         if arguments.category:
             result["category"] = arguments.category
         return emit(result)
 
-    revision_feedback = state.get("revision_feedback")
-    if (
-        isinstance(revision_feedback, dict)
-        and revision_feedback.get("fingerprint") == fingerprint
-    ):
+    if current_revision_verdict(state, fingerprint):
         return emit(
             {
                 "status": "blocked",

@@ -364,6 +364,58 @@ class PostWorkflowTests(unittest.TestCase):
             restarted = self.run_workflow(root, "review", "rewrite-me")
             self.assertEqual("review_pending", restarted["status"])
 
+    def test_user_can_explicitly_override_rejected_verdict_without_editing(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.install_category_config(root)
+            self.run_workflow(
+                root,
+                "new",
+                "--title",
+                "用于发布链路验证的测试文章",
+                "--slug",
+                "review-override",
+            )
+            self.run_workflow(root, "review", "review-override")
+            report = self.draft_path(root, "review-override") / "review.md"
+            report.write_text(
+                report.read_text(encoding="utf-8")
+                .replace(
+                    "- 请在这里记录结构与叙事顺序建议；不直接修改正文。",
+                    "- 误将测试稿的简短内容视为结构缺陷。",
+                )
+                .replace(
+                    "- 请在这里记录措辞、段落和术语建议；不直接修改正文。",
+                    "- 误将图片 alt 文本视为图片路径。",
+                ),
+                encoding="utf-8",
+            )
+            self.run_workflow(
+                root,
+                "review",
+                "review-override",
+                "--complete",
+                "--verdict",
+                "needs-revision",
+            )
+            article = self.draft_path(root, "review-override") / "article.md"
+            article_hash = hashlib.sha256(article.read_bytes()).hexdigest()
+
+            overridden = self.complete_review(
+                root,
+                "review-override",
+                category="AI 与 Agent",
+            )
+            status = self.run_workflow(root, "status", "review-override")
+
+            self.assertEqual("needs-revision", overridden["overrode_verdict"])
+            self.assertEqual(
+                article_hash,
+                hashlib.sha256(article.read_bytes()).hexdigest(),
+            )
+            self.assertEqual("current", status["review"])
+            self.assertEqual("AI 与 Agent", overridden["category"])
+
     def test_review_accepts_one_category_from_the_whitelist(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
